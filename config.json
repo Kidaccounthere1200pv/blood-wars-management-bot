@@ -1,0 +1,19 @@
+{
+  "command_permissions": {
+    "ping": {
+      "allowed_roles": []
+    },
+    "rename": {
+      "allowed_roles": [1209828340265914368]
+    },
+    "channel": {
+      "allowed_roles": [1209828340265914368]
+    },
+    "sync": {
+      "allowed_roles": [1209828340265914368, 1348288812194861056]
+    },
+    "viewlock": {
+      "allowed_roles": [1209828340265914368]
+    }
+  }
+}
