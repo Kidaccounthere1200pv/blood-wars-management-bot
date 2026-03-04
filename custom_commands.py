@@ -124,6 +124,28 @@ async def rename_prefix_error(ctx, error):
     elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.send("❌ Usage: `!rename <new_channel_name>`")
 
+# Prefix command: !delete
+@commands.command(name='delete')
+@has_required_roles('channel')
+async def delete_prefix(ctx, confirmation: str, channel: discord.TextChannel = None):
+    """Delete a channel (requires confirmation)"""
+    target_channel = channel or ctx.channel
+    
+    if confirmation.lower() != 'yes':
+        await ctx.send("❌ Deletion cancelled. You must type `yes` to confirm.")
+        return
+    
+    await handle_delete(ctx, target_channel, is_slash=False)
+
+@delete_prefix.error
+async def delete_prefix_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send("❌ You don't have permission to use this command!")
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("❌ Usage: `!delete <yes> [#channel]`")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send("❌ Please mention a valid channel!")
+
 # Slash command group for channel operations
 class ChannelCommands(app_commands.Group):
     """Channel management commands"""
@@ -152,6 +174,25 @@ class ChannelCommands(app_commands.Group):
             await interaction.response.send_message("❌ I don't have permission to rename this channel!", ephemeral=True)
         except discord.HTTPException as e:
             await interaction.response.send_message(f"❌ Failed to rename channel: {e}", ephemeral=True)
+
+    @app_commands.command(name="delete", description="Delete a channel (requires confirmation)")
+    @app_commands.describe(
+        confirmation="Type 'yes' to confirm deletion",
+        channel="Channel to delete (defaults to current channel)"
+    )
+    async def channel_delete(self, interaction: discord.Interaction, confirmation: str, channel: discord.TextChannel = None):
+        """Delete a channel with confirmation"""
+        if not await slash_has_required_roles(interaction, 'channel'):
+            await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+            return
+    
+        target_channel = channel or interaction.channel
+    
+        if confirmation.lower() != 'yes':
+            await interaction.response.send_message("❌ Deletion cancelled. You must type `yes` to confirm.", ephemeral=True)
+            return
+    
+        await handle_delete(interaction, target_channel, is_slash=True)
 
 # Prefix command: !sync
 @commands.command(name='sync')
@@ -357,6 +398,54 @@ async def handle_viewlock(ctx_or_interaction, roles_input, is_slash: bool):
         else:
             await ctx_or_interaction.send(message)
 
+async def handle_delete(ctx_or_interaction, channel: discord.TextChannel, is_slash: bool):
+    """Common channel deletion logic"""
+    try:
+        # Check if bot has manage_channels permission
+        if not ctx_or_interaction.guild.me.guild_permissions.manage_channels:
+            message = "❌ I don't have permission to manage channels!"
+            if is_slash:
+                await ctx_or_interaction.response.send_message(message, ephemeral=True)
+            else:
+                await ctx_or_interaction.send(message)
+            return
+        
+        channel_name = channel.name
+        channel_mention = channel.mention
+        
+        # Delete the channel
+        await channel.delete()
+        
+        # Send success message (in the channel that executed the command, not the deleted one)
+        success_message = f"✅ Channel **{channel_name}** has been deleted."
+        
+        if is_slash:
+            if ctx_or_interaction.response.is_done():
+                await ctx_or_interaction.followup.send(success_message)
+            else:
+                await ctx_or_interaction.response.send_message(success_message)
+        else:
+            await ctx_or_interaction.send(success_message)
+            
+    except discord.Forbidden:
+        message = "❌ I don't have permission to delete this channel!"
+        if is_slash:
+            if ctx_or_interaction.response.is_done():
+                await ctx_or_interaction.followup.send(message, ephemeral=True)
+            else:
+                await ctx_or_interaction.response.send_message(message, ephemeral=True)
+        else:
+            await ctx_or_interaction.send(message)
+    except Exception as e:
+        message = f"❌ Failed to delete channel: {e}"
+        if is_slash:
+            if ctx_or_interaction.response.is_done():
+                await ctx_or_interaction.followup.send(message, ephemeral=True)
+            else:
+                await ctx_or_interaction.response.send_message(message, ephemeral=True)
+        else:
+            await ctx_or_interaction.send(message)
+
 # Setup function to register commands with the bot
 # Setup function to register commands with the bot
 def setup_commands(bot_instance):
@@ -365,6 +454,7 @@ def setup_commands(bot_instance):
     bot_instance.add_command(rename_prefix)
     bot_instance.add_command(sync_prefix)
     bot_instance.add_command(viewlock_prefix)
+    bot_instance.add_command(delete_prefix)
     
     # Add slash commands
     bot_instance.tree.add_command(ping_slash)
