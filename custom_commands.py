@@ -399,7 +399,7 @@ async def handle_viewlock(ctx_or_interaction, roles_input, is_slash: bool):
             await ctx_or_interaction.send(message)
 
 async def handle_delete(ctx_or_interaction, channel: discord.TextChannel, is_slash: bool):
-    """Common channel deletion logic"""
+    """Common channel deletion logic with 10-second timer"""
     try:
         # Check if bot has manage_channels permission
         if not ctx_or_interaction.guild.me.guild_permissions.manage_channels:
@@ -413,19 +413,51 @@ async def handle_delete(ctx_or_interaction, channel: discord.TextChannel, is_sla
         channel_name = channel.name
         channel_mention = channel.mention
         
-        # Delete the channel
-        await channel.delete()
-        
-        # Send success message (in the channel that executed the command, not the deleted one)
-        success_message = f"✅ Channel **{channel_name}** has been deleted."
+        # Send warning message
+        warning_message = f"⚠️ **{channel_mention}** will be deleted in **10 seconds**. Send any message in this channel to cancel deletion."
         
         if is_slash:
             if ctx_or_interaction.response.is_done():
-                await ctx_or_interaction.followup.send(success_message)
+                await ctx_or_interaction.followup.send(warning_message)
             else:
-                await ctx_or_interaction.response.send_message(success_message)
+                await ctx_or_interaction.response.send_message(warning_message)
         else:
-            await ctx_or_interaction.send(success_message)
+            await ctx_or_interaction.send(warning_message)
+        
+        # Define a check function to detect messages in the channel
+        def check_message(message):
+            return message.channel.id == channel.id and not message.author.bot
+        
+        # Wait for 10 seconds or until a message is sent in the channel
+        try:
+            # Wait for a message in the target channel
+            await ctx_or_interaction.bot.wait_for('message', timeout=10.0, check=check_message)
+            
+            # If we get here, a message was sent in the channel
+            cancel_message = f"✅ Deletion of **{channel_name}** has been cancelled."
+            
+            if is_slash:
+                if ctx_or_interaction.response.is_done():
+                    await ctx_or_interaction.followup.send(cancel_message)
+                else:
+                    await ctx_or_interaction.response.send_message(cancel_message)
+            else:
+                await ctx_or_interaction.send(cancel_message)
+                
+        except asyncio.TimeoutError:
+            # No message was sent in 10 seconds, proceed with deletion
+            await channel.delete()
+            
+            # Send success message (in the channel that executed the command, not the deleted one)
+            success_message = f"✅ Channel **{channel_name}** has been deleted."
+            
+            if is_slash:
+                if ctx_or_interaction.response.is_done():
+                    await ctx_or_interaction.followup.send(success_message)
+                else:
+                    await ctx_or_interaction.response.send_message(success_message)
+            else:
+                await ctx_or_interaction.send(success_message)
             
     except discord.Forbidden:
         message = "❌ I don't have permission to delete this channel!"
